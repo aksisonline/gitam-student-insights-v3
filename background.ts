@@ -42,12 +42,18 @@ class GitamInsightsBackground {
 
     // Set up alarm for auto-refresh
     if (this.settings.autoRefresh) {
-      chrome.alarms.create('autoRefresh', { periodInMinutes: 30 });
-      chrome.alarms.onAlarm.addListener((alarm) => {
-        if (alarm.name === 'autoRefresh') {
-          this.handleAutoRefresh();
+      try {
+        if (chrome.alarms && chrome.alarms.create) {
+          chrome.alarms.create('autoRefresh', { periodInMinutes: 30 });
+          chrome.alarms.onAlarm.addListener((alarm) => {
+            if (alarm.name === 'autoRefresh') {
+              this.handleAutoRefresh();
+            }
+          });
         }
-      });
+      } catch (error) {
+        console.log('GITAM Student Insights v3: Alarms API not available:', error);
+      }
     }
 
     console.log('GITAM Student Insights v3: Background script initialized');

@@ -1,16 +1,26 @@
-import React, { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState } from 'react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { SubjectData, AttendanceStats } from '@/lib/types';
-import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw, BookOpen, History, TrendingUp, Calculator, Award } from 'lucide-react';
+import type { SubjectData, AttendanceStats, AttendanceRecord } from '@/lib/types';
+
+// Import all modular components
+import { AttendanceHeader } from './AttendanceHeader';
+import { StatsGrid } from './StatsGrid';
+import { SubjectBarChart } from './charts/SubjectBarChart';
+import { DistributionPieChart } from './charts/DistributionPieChart';
+import { SubjectsList } from './SubjectsList';
+import { HistoryTab } from './HistoryTab';
+import { TrendsTab } from './TrendsTab';
+import { CalculatorTab } from './CalculatorTab';
+import { AnalyticsTab } from './AnalyticsTab';
+import { ProBadge } from './pro/ProBadge';
 
 interface AttendanceDashboardProps {
   subjects?: SubjectData[];
   stats?: AttendanceStats;
+  attendanceRecords?: AttendanceRecord[];
   loading?: boolean;
   error?: string | null;
   onRefresh?: () => void;
@@ -19,306 +29,146 @@ interface AttendanceDashboardProps {
 export function AttendanceDashboard({
   subjects = [],
   stats,
+  attendanceRecords = [],
   loading = false,
   error = null,
   onRefresh
 }: AttendanceDashboardProps) {
   const [activeTab, setActiveTab] = useState('overview');
 
+  // Loading state
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      <div className="flex flex-col items-center justify-center h-96 space-y-4">
+        <div className="relative">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary/30"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-t-primary absolute inset-0"></div>
+        </div>
+        <div className="space-y-2 text-center">
+          <p className="text-base font-semibold text-foreground animate-pulse">Loading Attendance Data</p>
+          <p className="text-sm text-muted-foreground">Please wait while we fetch your records...</p>
+        </div>
       </div>
     );
   }
 
+  // Error state
   if (error) {
     return (
-      <Card>
-        <CardContent className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <AlertTriangle className="h-12 w-12 text-destructive mx-auto mb-4" />
-            <p className="text-destructive mb-4">{error}</p>
-            <Button onClick={onRefresh} variant="outline">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Try Again
-            </Button>
+      <Card className="border-destructive/50 bg-destructive/5">
+        <CardContent className="flex flex-col items-center justify-center h-96 space-y-6 p-6">
+          <div className="relative">
+            <div className="absolute inset-0 bg-destructive/20 blur-2xl rounded-full"></div>
+            <AlertTriangle className="h-16 w-16 text-destructive relative z-10 animate-pulse" />
           </div>
+          <div className="text-center space-y-2">
+            <h3 className="text-lg font-bold text-destructive">Oops! Something went wrong</h3>
+            <p className="text-muted-foreground max-w-md text-sm">{error}</p>
+          </div>
+          <Button onClick={onRefresh} variant="destructive" size="default" className="gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Try Again
+          </Button>
         </CardContent>
       </Card>
     );
   }
 
+  // Empty state
   if (!subjects.length || !stats) {
     return (
-      <Card>
-        <CardContent className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <p className="text-muted-foreground mb-4">No attendance data available</p>
-            <Button onClick={onRefresh} variant="outline">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh Data
-            </Button>
+      <Card className="border-dashed">
+        <CardContent className="flex flex-col items-center justify-center h-96 space-y-6 p-6">
+          <div className="relative">
+            <div className="absolute inset-0 bg-primary/20 blur-2xl rounded-full"></div>
+            <BookOpen className="h-16 w-16 text-muted-foreground relative z-10" />
           </div>
+          <div className="text-center space-y-2">
+            <h3 className="text-lg font-bold">No Attendance Data Available</h3>
+            <p className="text-muted-foreground max-w-md text-sm">
+              We couldn't find any attendance records. Click refresh to load your data.
+            </p>
+          </div>
+          <Button onClick={onRefresh} size="default" className="gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Refresh Data
+          </Button>
         </CardContent>
       </Card>
     );
   }
 
-  const chartData = subjects.map(subject => ({
-    subject: subject.code,
-    percentage: subject.percentage,
-    fill: subject.status === 'safe' ? '#22c55e' : subject.status === 'warning' ? '#f59e0b' : '#ef4444'
-  }));
-
-  const pieData = [
-    { name: 'Safe', value: stats.safeSubjects, color: '#22c55e' },
-    { name: 'Warning', value: stats.warningSubjects, color: '#f59e0b' },
-    { name: 'Risk', value: stats.riskSubjects, color: '#ef4444' }
-  ];
-
+  // Main dashboard
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 p-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Attendance Dashboard</h1>
-          <p className="text-muted-foreground">Track your academic progress</p>
-        </div>
-        <Button onClick={onRefresh} variant="outline">
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
-      </div>
+      <AttendanceHeader onRefresh={onRefresh} />
 
       {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Overall Attendance</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.overallPercentage.toFixed(1)}%</div>
-            <Progress value={stats.overallPercentage} className="mt-2" />
-          </CardContent>
-        </Card>
+      <StatsGrid stats={stats} />
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Subjects</CardTitle>
-            <CheckCircle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalSubjects}</div>
-            <p className="text-xs text-muted-foreground">Enrolled subjects</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Safe Subjects</CardTitle>
-            <CheckCircle className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">{stats.safeSubjects}</div>
-            <p className="text-xs text-muted-foreground">≥75% attendance</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Risk Subjects</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-red-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">{stats.riskSubjects}</div>
-            <p className="text-xs text-muted-foreground">&lt;65% attendance</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Main Content Tabs */}
+      {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="subjects">Subjects</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid p-1 h-auto gap-1">
+          <TabsTrigger value="overview" className="gap-2">
+            <BookOpen className="h-4 w-4" />
+            <span className="hidden sm:inline">Overview</span>
+          </TabsTrigger>
+          <TabsTrigger value="history" className="gap-2">
+            <History className="h-4 w-4" />
+            <span className="hidden sm:inline">History</span>
+          </TabsTrigger>
+          <TabsTrigger value="trends" className="gap-2">
+            <TrendingUp className="h-4 w-4" />
+            <span className="hidden sm:inline">Trends</span>
+          </TabsTrigger>
+          <TabsTrigger value="calculator" className="gap-2">
+            <Calculator className="h-4 w-4" />
+            <span className="hidden sm:inline">Calculator</span>
+            <ProBadge />
+          </TabsTrigger>
+          <TabsTrigger value="analytics" className="gap-2">
+            <Award className="h-4 w-4" />
+            <span className="hidden sm:inline">Analytics</span>
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Subject-wise Chart */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Subject-wise Attendance</CardTitle>
-                <CardDescription>Current attendance percentage for each subject</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="subject" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar dataKey="percentage" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Distribution Chart */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Subject Distribution</CardTitle>
-                <CardDescription>Breakdown by attendance status</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={pieData}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                        outerRadius={80}
-                        fill="#8884d8"
-                        dataKey="value"
-                      >
-                        {pieData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
+        {/* Overview Tab */}
+        <TabsContent value="overview" className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <SubjectBarChart subjects={subjects} />
+            <DistributionPieChart stats={stats} />
           </div>
-        </TabsContent>
-
-        <TabsContent value="subjects" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>All Subjects</CardTitle>
-              <CardDescription>Detailed view of each subject's attendance</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {subjects.map((subject) => (
-                  <div key={subject.code} className="flex items-center justify-between p-4 border rounded-lg">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <h3 className="font-semibold">{subject.name}</h3>
-                        <Badge variant={
-                          subject.status === 'safe' ? 'default' :
-                          subject.status === 'warning' ? 'secondary' : 'destructive'
-                        }>
-                          {subject.status}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <span>{subject.present}/{subject.total} classes</span>
-                        <span>{subject.absent} absent</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <div className="text-2xl font-bold">{subject.percentage.toFixed(1)}%</div>
-                        <Progress value={subject.percentage} className="w-24" />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+          <Card className="border shadow-sm">
+            <CardContent className="p-6">
+              <h3 className="text-lg font-semibold mb-4">All Subjects ({stats.totalSubjects})</h3>
+              <SubjectsList subjects={subjects} />
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="analytics" className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Attendance Trends</CardTitle>
-                <CardDescription>Performance insights and recommendations</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {stats.riskSubjects > 0 && (
-                    <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                      <div className="flex items-center gap-2 mb-2">
-                        <AlertTriangle className="h-5 w-5 text-red-500" />
-                        <h4 className="font-semibold text-red-800">Attention Required</h4>
-                      </div>
-                      <p className="text-sm text-red-700">
-                        You have {stats.riskSubjects} subject{stats.riskSubjects > 1 ? 's' : ''} below 65% attendance.
-                        Consider attending more classes to avoid academic penalties.
-                      </p>
-                    </div>
-                  )}
-                  
-                  {stats.warningSubjects > 0 && (
-                    <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                      <div className="flex items-center gap-2 mb-2">
-                        <AlertTriangle className="h-5 w-5 text-yellow-500" />
-                        <h4 className="font-semibold text-yellow-800">Warning Zone</h4>
-                      </div>
-                      <p className="text-sm text-yellow-700">
-                        {stats.warningSubjects} subject{stats.warningSubjects > 1 ? 's' : ''} in warning zone (65-74%).
-                        Stay consistent with attendance.
-                      </p>
-                    </div>
-                  )}
+        {/* History Tab */}
+        <TabsContent value="history" className="animate-in fade-in slide-in-from-bottom-2">
+          <HistoryTab attendanceRecords={attendanceRecords} />
+        </TabsContent>
 
-                  {stats.safeSubjects > 0 && (
-                    <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                      <div className="flex items-center gap-2 mb-2">
-                        <CheckCircle className="h-5 w-5 text-green-500" />
-                        <h4 className="font-semibold text-green-800">Good Progress</h4>
-                      </div>
-                      <p className="text-sm text-green-700">
-                        {stats.safeSubjects} subject{stats.safeSubjects > 1 ? 's' : ''} above 75% attendance.
-                        Keep up the good work!
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+        {/* Trends Tab */}
+        <TabsContent value="trends" className="animate-in fade-in slide-in-from-bottom-2">
+          <TrendsTab subjects={subjects} stats={stats} />
+        </TabsContent>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Quick Stats</CardTitle>
-                <CardDescription>Summary of your academic performance</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium">Total Classes</span>
-                    <span className="text-sm">{stats.totalClasses}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium">Present</span>
-                    <span className="text-sm text-green-600">{stats.totalPresent}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium">Absent</span>
-                    <span className="text-sm text-red-600">{stats.totalAbsent}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium">Attendance Rate</span>
-                    <span className="text-sm font-semibold">{stats.overallPercentage.toFixed(1)}%</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+        {/* Calculator Tab (PRO) */}
+        <TabsContent value="calculator" className="animate-in fade-in slide-in-from-bottom-2">
+          <CalculatorTab 
+            subjects={subjects} 
+            stats={stats} 
+            attendanceRecords={attendanceRecords}
+          />
+        </TabsContent>
+
+        {/* Analytics Tab */}
+        <TabsContent value="analytics" className="animate-in fade-in slide-in-from-bottom-2">
+          <AnalyticsTab subjects={subjects} stats={stats} />
         </TabsContent>
       </Tabs>
     </div>

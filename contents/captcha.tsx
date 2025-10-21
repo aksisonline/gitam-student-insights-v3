@@ -50,7 +50,7 @@ class CaptchaAutoFill {
     
     // Look for CAPTCHA elements
     const captchaPreview = document.querySelector('.preview');
-    const captchaInput = document.getElementById('captcha_form');
+    const captchaInput = document.getElementById('captcha_form') as HTMLInputElement;
     
     if (captchaPreview && captchaInput) {
       console.log('GITAM Student Insights v3: CAPTCHA elements found, extracting text...');
@@ -126,7 +126,7 @@ class CaptchaAutoFill {
         if (mutation.type === 'childList') {
           // Check if CAPTCHA elements were added
           const captchaPreview = document.querySelector('.preview');
-          const captchaInput = document.getElementById('captcha_form');
+          const captchaInput = document.getElementById('captcha_form') as HTMLInputElement;
           
           if (captchaPreview && captchaInput) {
             // CAPTCHA elements appeared, set up auto-fill
@@ -170,6 +170,47 @@ class CaptchaAutoFill {
     });
   }
 
+  showCaptchaUI() {
+    // Create a UI indicator to show CAPTCHA auto-fill is active
+    const existingIndicator = document.getElementById('gitam-captcha-indicator');
+    if (existingIndicator) {
+      existingIndicator.remove();
+    }
+
+    const indicator = document.createElement('div');
+    indicator.id = 'gitam-captcha-indicator';
+    indicator.style.cssText = `
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      animation: slideIn 0.3s ease-out;
+    `;
+    indicator.innerHTML = `
+      <span style="font-size: 16px;">✓</span>
+      <span>CAPTCHA Auto-filled</span>
+    `;
+
+    document.body.appendChild(indicator);
+
+    // Remove indicator after 3 seconds
+    setTimeout(() => {
+      indicator.style.animation = 'slideOut 0.3s ease-in';
+      setTimeout(() => indicator.remove(), 300);
+    }, 3000);
+  }
+
 }
 
 // Initialize CAPTCHA auto-fill
@@ -185,3 +226,9 @@ if (document.readyState === 'loading') {
 } else {
   initCaptchaAutoFill();
 }
+
+// Plasmo content script configuration
+export const config = {
+  matches: ["https://login.gitam.edu/*"],
+  run_at: "document_end"
+};

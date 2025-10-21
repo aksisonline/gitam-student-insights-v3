@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AttendanceDashboard } from '@/components/attendance/AttendanceDashboard';
-import { SubjectData, AttendanceStats } from '@/lib/types';
-import '@/globals.css';
+import { AttendanceDashboard } from '../components/attendance/AttendanceDashboard';
+import { SubjectData, AttendanceStats } from '../lib/types';
+import { updateProModeCache } from '../lib/features/featureManager';
+import '../globals.css';
 
 // Content script for GITAM attendance page using proven logic from GITAM Pro Max
 class GitamInsightsContent {
-  private originalBoxHTML: string | null = null;
-  private isEnhancedMode = false;
   private attendanceData: any = {};
   private subjectData: SubjectData[] = [];
   private fullAttendanceRecords: any[] = [];
@@ -23,7 +22,15 @@ class GitamInsightsContent {
     this.init();
   }
 
-  init() {
+  async init() {
+    // Initialize pro mode cache for sync access
+    try {
+      await updateProModeCache();
+      console.log('GITAM Student Insights v3: Pro mode cache initialized');
+    } catch (error) {
+      console.error('GITAM Student Insights v3: Error initializing pro mode cache:', error);
+    }
+    
     // Check if we're on GITAM portal
     this.isGitamPortal = window.location.href.includes('gstudent.gitam.edu');
     
@@ -75,7 +82,8 @@ class GitamInsightsContent {
       this.attendancePageLoaded = true;
       // Reset extraction flag for new page load
       this.isExtractingData = false;
-      this.setupUIToggle();
+      this.injectCustomStyles();
+      this.setupEnhancedTab();
       this.interceptAPIResponses();
       this.extractExistingData();
     } else if (!isAttendancePage && this.attendancePageLoaded) {
@@ -87,27 +95,27 @@ class GitamInsightsContent {
   cleanup() {
     console.log('GITAM Student Insights v3: Cleaning up...');
     this.attendancePageLoaded = false;
-    this.isEnhancedMode = false;
     this.isExtractingData = false;
     this.isApiDataLoaded = false;
     this.hasAccurateSubjectData = false;
     
-    // Remove toggle and refresh buttons if they exist
-    const buttonContainer = document.querySelector('.gitam-button-container');
-    if (buttonContainer) buttonContainer.remove();
+    // Remove Enhanced View tab if it exists
+    const enhancedTab = document.querySelector('#nav-enhanced-tab');
+    if (enhancedTab) enhancedTab.parentElement?.remove();
     
-    // Remove enhanced UI if it exists
-    const enhancedUI = document.getElementById('gitam-enhanced-ui');
-    if (enhancedUI) enhancedUI.remove();
+    // Remove Enhanced View tab pane if it exists
+    const enhancedPane = document.querySelector('#tabEnhanced');
+    if (enhancedPane) enhancedPane.remove();
+    
+    // Remove custom styles
+    const styles = document.querySelector('#gitam-enhanced-styles');
+    if (styles) styles.remove();
     
     // Clean up React root
     if (this.reactRoot) {
       this.reactRoot.unmount();
       this.reactRoot = null;
     }
-    
-    // Remove enhanced mode class
-    document.body.classList.remove('gitam-enhanced-mode');
   }
 
   isAttendancePage() {
@@ -126,71 +134,164 @@ class GitamInsightsContent {
     );
   }
 
-  setupUIToggle() {
-    // Place the toggle button inside the main content area, top-right of attendance card
-    const boxContainer = document.querySelector('.box-container');
-    // Remove old buttons if they exist
-    const oldBtn = document.querySelector('.ui-toggle');
-    if (oldBtn) oldBtn.remove();
-
-    // Create button container
-    const buttonContainer = document.createElement('div');
-    buttonContainer.className = 'gitam-button-container';
-    buttonContainer.style.cssText = 'display: flex; gap: 0.5rem; margin: 1rem 0;';
-
-    // Create toggle button
-    const toggleBtn = document.createElement('button');
-    toggleBtn.className = 'ui-toggle';
-    toggleBtn.style.cssText = `
-      position: static; 
-      z-index: 1000;
-      background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
-      color: #ffffff;
-      border: 1px solid #404040;
-      border-radius: 8px;
-      padding: 8px 16px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
+  injectCustomStyles() {
+    // Check if styles already injected
+    if (document.querySelector('#gitam-enhanced-styles')) return;
+    
+    const styleTag = document.createElement('style');
+    styleTag.id = 'gitam-enhanced-styles';
+    styleTag.textContent = `
+      /* Enhanced View tab standout styling */
+      #nav-enhanced-tab {
+        transition: all 0.2s ease;
+      }
+      
+      #nav-enhanced-tab.active {
+        color: #007367 !important;
+        border-bottom-color: #007367 !important;
+        font-weight: 600;
+      }
+      
+      #nav-enhanced-tab.active span:first-child {
+        animation: sparkle 2s ease-in-out infinite;
+      }
+      
+      @keyframes sparkle {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.2); opacity: 0.8; }
+      }
+      
+      /* Dashboard container styling */
+      #gitam-enhanced-dashboard-root {
+        min-height: 400px;
+      }
     `;
-    toggleBtn.innerHTML = '<span style="font-size: 11px;">⚡</span> Enhanced View';
-    toggleBtn.onmouseover = () => {
-      toggleBtn.style.background = 'linear-gradient(135deg, #2d2d2d 0%, #3d3d3d 100%)';
-      toggleBtn.style.transform = 'translateY(-1px)';
-    };
-    toggleBtn.onmouseout = () => {
-      toggleBtn.style.background = 'linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%)';
-      toggleBtn.style.transform = 'translateY(0)';
-    };
-    toggleBtn.onclick = () => this.toggleEnhancedMode();
-
-    buttonContainer.appendChild(toggleBtn);
-
-    // Place button container just before box-container
-    if (boxContainer && boxContainer.parentNode) {
-      boxContainer.parentNode.insertBefore(buttonContainer, boxContainer);
-    } else {
-      document.body.insertBefore(buttonContainer, document.body.firstChild);
-    }
+    
+    document.head.appendChild(styleTag);
   }
 
-  toggleEnhancedMode() {
-    this.isEnhancedMode = !this.isEnhancedMode;
-    const toggleBtn = document.querySelector('.ui-toggle');
+  setupEnhancedTab() {
+    const navTabs = document.querySelector('.nav.nav-tabs');
+    const tabContent = document.querySelector('.tab-content');
     
-    if (this.isEnhancedMode) {
-      // Show enhanced UI and fetch data
-      toggleBtn.innerHTML = '<span style="font-size: 11px;">↩</span> Original View';
-      this.showEnhancedUI();
+    if (!navTabs || !tabContent) {
+      console.warn('GITAM Student Insights: Could not find tab navigation');
+      return;
+    }
+
+    // Remove old tab if exists
+    const oldTab = document.querySelector('#nav-enhanced-tab');
+    const oldPane = document.querySelector('#tabEnhanced');
+    if (oldTab) oldTab.parentElement?.remove();
+    if (oldPane) oldPane.remove();
+
+    // Create new tab list item
+    const tabItem = document.createElement('li');
+    tabItem.className = 'nav-item';
+    tabItem.setAttribute('role', 'presentation');
+
+    // Create tab link with GITAM theme + standout styling
+    const tabLink = document.createElement('a');
+    tabLink.id = 'nav-enhanced-tab';
+    tabLink.className = 'nav-link';
+    tabLink.setAttribute('data-bs-toggle', 'tab');
+    tabLink.setAttribute('href', '#tabEnhanced');
+    tabLink.setAttribute('role', 'tab');
+    tabLink.setAttribute('aria-controls', 'tabEnhanced');
+    tabLink.setAttribute('aria-selected', 'false');
+    
+    // Add icon and text with inline styles for standout effect
+    tabLink.innerHTML = `
+      <span style="display: inline-flex; align-items: center; gap: 0.375rem;">
+        <span style="font-size: 1.1rem; filter: drop-shadow(0 0 4px rgba(0, 115, 103, 0.3));">✨</span>
+        <span>Enhanced View</span>
+      </span>
+    `;
+    
+    // Add custom styling to make it stand out while matching theme
+    tabLink.style.cssText = `
+      position: relative;
+      font-weight: 500;
+    `;
+    
+    // Add hover effect that matches GITAM but with teal accent
+    tabLink.addEventListener('mouseenter', () => {
+      if (!tabLink.classList.contains('active')) {
+        tabLink.style.color = '#007367';
+        tabLink.style.borderBottomColor = '#007367';
+      }
+    });
+    
+    tabLink.addEventListener('mouseleave', () => {
+      if (!tabLink.classList.contains('active')) {
+        tabLink.style.color = '';
+        tabLink.style.borderBottomColor = '';
+      }
+    });
+
+    // Add click handler
+    tabLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.showEnhancedView(tabLink);
+    });
+
+    tabItem.appendChild(tabLink);
+    
+    // Insert as last tab (after Semester)
+    navTabs.appendChild(tabItem);
+
+    // Create tab pane for enhanced content
+    const tabPane = document.createElement('div');
+    tabPane.id = 'tabEnhanced';
+    tabPane.className = 'tab-pane';
+    tabPane.setAttribute('role', 'tabpanel');
+    tabPane.setAttribute('aria-labelledby', 'nav-enhanced-tab');
+    
+    // Add container for React dashboard
+    tabPane.innerHTML = `
+      <div id="gitam-enhanced-dashboard-root" style="padding: 1rem 0;">
+        <!-- React dashboard will mount here -->
+      </div>
+    `;
+    
+    tabContent.appendChild(tabPane);
+  }
+
+  showEnhancedView(tabLink: HTMLElement) {
+    // Deactivate all other tabs
+    document.querySelectorAll('.nav-link').forEach(link => {
+      link.classList.remove('active');
+      link.setAttribute('aria-selected', 'false');
+    });
+    
+    document.querySelectorAll('.tab-pane').forEach(pane => {
+      pane.classList.remove('active', 'show');
+    });
+
+    // Activate Enhanced View tab
+    tabLink.classList.add('active');
+    tabLink.setAttribute('aria-selected', 'true');
+    
+    const tabPane = document.querySelector('#tabEnhanced');
+    if (tabPane) {
+      tabPane.classList.add('active', 'show');
+    }
+
+    // Ensure we have data before rendering
+    if (this.subjectData.length === 0 && !this.hasAccurateSubjectData) {
+      console.log('GITAM Student Insights v3: Extracting data from DOM...');
+      this.extractSubjectDataFromDOM();
+    }
+
+    // If still no data, try API fetch
+    if (this.subjectData.length === 0) {
+      console.log('GITAM Student Insights v3: No DOM data, fetching from API...');
+      this.fetchAndShowEnhancedUI();
     } else {
-      // Hide enhanced UI
-      toggleBtn.innerHTML = '<span style="font-size: 11px;">⚡</span> Enhanced View';
-      this.hideEnhancedUI();
+      // Render immediately with existing data
+      this.renderEnhancedDashboard();
+      // Refresh in background
+      this.refreshAttendanceData();
     }
   }
 
@@ -203,88 +304,184 @@ class GitamInsightsContent {
       this.originalBoxHTML = boxContainer.innerHTML;
     }
 
-    // Show loading state
-    boxContainer.innerHTML = `
-      <div style="
-        text-align: center; 
-        padding: 40px 20px;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-        background: #ffffff;
-        border: 1px solid #e5e7eb;
-        border-radius: 8px;
-        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
-      ">
-        <div style="font-size: 18px; font-weight: 500; color: #374151; margin-bottom: 8px;">
-          <span style="font-size: 16px; margin-right: 8px;">⟳</span>Loading attendance data
-        </div>
-        <div style="font-size: 14px; color: #6b7280;">Fetching your latest attendance records</div>
-      </div>
-    `;
+    // First, try to extract data from DOM if not already done
+    if (this.subjectData.length === 0 && !this.hasAccurateSubjectData) {
+      console.log('GITAM Student Insights v3: Extracting data from DOM before showing enhanced view...');
+      this.extractSubjectDataFromDOM();
+    }
 
-    // Fetch real attendance data from the API, then render UI
-    Promise.all([
-      this.fetchSubjectOverviewData(),
-      this.fetchFullAttendanceData()
-    ]).then(() => {
-      this.renderEnhancedUI();
-    }).catch(error => {
-      console.log('GITAM Student Insights v3: Error loading data:', error);
-      // Show error state or fallback to existing data
-      this.renderEnhancedUI();
-    });
+    // Check if we already have data
+    const hasExistingData = this.subjectData.length > 0;
+
+    if (hasExistingData) {
+      // We have data, render immediately
+      console.log('GITAM Student Insights v3: Using existing data to render enhanced view');
+      this.renderEnhancedDashboard();
+      
+      // Still fetch fresh data in background
+      Promise.all([
+        this.fetchSubjectOverviewData(),
+        this.fetchFullAttendanceData()
+      ]).then(() => {
+        console.log('GITAM Student Insights v3: Fresh data loaded, re-rendering...');
+        const enhancedTab = document.querySelector('#tabEnhanced');
+        if (enhancedTab && enhancedTab.classList.contains('active')) {
+          this.renderEnhancedDashboard();
+        }
+      }).catch(error => {
+        console.log('GITAM Student Insights v3: Background refresh failed, keeping existing data:', error);
+      });
+    } else {
+      // No existing data, show loading and wait for fetch
+      boxContainer.innerHTML = `
+        <div style="
+          text-align: center; 
+          padding: 40px 20px;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+          background: #ffffff;
+          border: 1px solid #e5e7eb;
+          border-radius: 8px;
+          box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        ">
+          <div style="font-size: 18px; font-weight: 500; color: #374151; margin-bottom: 8px;">
+            <span style="font-size: 16px; margin-right: 8px;">⟳</span>Loading attendance data
+          </div>
+          <div style="font-size: 14px; color: #6b7280;">Fetching your latest attendance records...</div>
+          <div style="font-size: 12px; color: #9ca3af; margin-top: 8px;">This may take a few seconds</div>
+        </div>
+      `;
+
+      // Retry logic with timeout
+      const fetchWithRetry = async (retries = 3) => {
+        for (let i = 0; i < retries; i++) {
+          try {
+            console.log(`GITAM Student Insights v3: Fetch attempt ${i + 1}/${retries}`);
+            
+            await Promise.all([
+              this.fetchSubjectOverviewData(),
+              this.fetchFullAttendanceData()
+            ]);
+            
+            // Also try DOM extraction as fallback
+            if (this.subjectData.length === 0) {
+              console.log('GITAM Student Insights v3: API fetch returned no data, trying DOM extraction...');
+              this.extractSubjectDataFromDOM();
+              // Wait a bit for DOM to be ready
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            
+            // Check if we got data
+            if (this.subjectData.length > 0) {
+              console.log(`GITAM Student Insights v3: Data loaded successfully on attempt ${i + 1}`);
+              break;
+            } else if (i < retries - 1) {
+              console.log(`GITAM Student Insights v3: No data yet, retrying in ${(i + 1) * 1000}ms...`);
+              await new Promise(resolve => setTimeout(resolve, (i + 1) * 1000));
+            }
+          } catch (error) {
+            console.log(`GITAM Student Insights v3: Fetch attempt ${i + 1} failed:`, error);
+            if (i < retries - 1) {
+              await new Promise(resolve => setTimeout(resolve, (i + 1) * 1000));
+            }
+          }
+        }
+      };
+
+      fetchWithRetry().then(() => {
+        this.renderEnhancedDashboard();
+      }).catch(error => {
+        console.log('GITAM Student Insights v3: All fetch attempts failed:', error);
+        this.renderEnhancedDashboard(); // Render anyway, will show empty state
+      });
+    }
   }
 
-  renderEnhancedUI() {
-    const boxContainer = document.querySelector('.box-container');
-    if (!boxContainer) return;
+  renderEnhancedDashboard() {
+    const dashboardRoot = document.querySelector('#gitam-enhanced-dashboard-root');
+    if (!dashboardRoot) {
+      console.error('GITAM Student Insights v3: Dashboard root not found');
+      return;
+    }
 
-    // Create container for React app
-    const reactContainer = document.createElement('div');
-    reactContainer.id = 'gitam-enhanced-ui';
-    boxContainer.innerHTML = '';
-    boxContainer.appendChild(reactContainer);
+    // Show loading if no data yet
+    if (this.subjectData.length === 0) {
+      dashboardRoot.innerHTML = `
+        <div style="text-align: center; padding: 60px 20px; color: #6b7280;">
+          <div style="font-size: 2rem; margin-bottom: 1rem;">⟳</div>
+          <div style="font-size: 1.125rem; font-weight: 500; color: #374151;">Loading attendance data...</div>
+          <div style="font-size: 0.875rem; margin-top: 0.5rem;">Fetching from GITAM servers</div>
+        </div>
+      `;
+      return;
+    }
 
     // Calculate stats
-    const stats = this.calculateStats();
+    const stats = this.calculateStats(this.subjectData);
 
-    // Render React app
-    this.reactRoot = createRoot(reactContainer);
-    this.reactRoot.render(
-      <AttendanceDashboard
-        subjects={this.subjectData}
-        stats={stats}
-        loading={false}
-        error={null}
-        onRefresh={() => this.refreshAttendanceData()}
-      />
-    );
+    // Render React app with error handling
+    try {
+      console.log('GITAM Student Insights v3: Rendering AttendanceDashboard in tab with:', {
+        subjects: this.subjectData,
+        stats: stats,
+      });
+      
+      // Check if AttendanceDashboard is properly imported
+      if (!AttendanceDashboard) {
+        throw new Error('AttendanceDashboard component is undefined');
+      }
+      
+      // Unmount previous root if exists
+      if (this.reactRoot) {
+        this.reactRoot.unmount();
+      }
+      
+      this.reactRoot = createRoot(dashboardRoot);
+      this.reactRoot.render(
+        <AttendanceDashboard
+          subjects={this.subjectData}
+          stats={stats}
+          loading={false}
+          error={null}
+          onRefresh={() => this.refreshAttendanceData()}
+        />
+      );
+      
+      console.log('GITAM Student Insights v3: Enhanced dashboard rendered successfully');
+    } catch (error) {
+      console.error('GITAM Student Insights v3: Error rendering React component:', error);
+      // Fallback to simple HTML if React fails
+      reactContainer.innerHTML = `
+        <div style="text-align: center; padding: 40px 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;">
+          <h3 style="color: #374151; margin-bottom: 8px;">Attendance Dashboard</h3>
+          <p style="color: #6b7280; margin-bottom: 16px;">Loading attendance data...</p>
+          <button onclick="location.reload()" style="
+            background: #3b82f6; 
+            color: white; 
+            border: none; 
+            padding: 8px 16px; 
+            border-radius: 6px; 
+            cursor: pointer;
+          ">Refresh</button>
+        </div>
+      `;
+    }
   }
 
-  hideEnhancedUI() {
-    const boxContainer = document.querySelector('.box-container');
-    if (boxContainer && this.originalBoxHTML) {
-      boxContainer.innerHTML = this.originalBoxHTML;
-    }
+  calculateStats(subjects?: SubjectData[]): AttendanceStats {
+    // Ensure subjectData is an array
+    const subjectsToUse = subjects || (Array.isArray(this.subjectData) ? this.subjectData : []);
     
-    // Clean up React root
-    if (this.reactRoot) {
-      this.reactRoot.unmount();
-      this.reactRoot = null;
-    }
-  }
-
-  calculateStats(): AttendanceStats {
-    const totalSubjects = this.subjectData.length;
-    const safeSubjects = this.subjectData.filter(s => s.status === 'safe').length;
-    const warningSubjects = this.subjectData.filter(s => s.status === 'warning').length;
-    const riskSubjects = this.subjectData.filter(s => s.status === 'risk').length;
+    const totalSubjects = subjectsToUse.length;
+    const safeSubjects = subjectsToUse.filter(s => s && s.status === 'safe').length;
+    const warningSubjects = subjectsToUse.filter(s => s && s.status === 'warning').length;
+    const riskSubjects = subjectsToUse.filter(s => s && s.status === 'risk').length;
     
-    const totalPresent = this.subjectData.reduce((sum, s) => sum + (s.present || 0), 0);
-    const totalAbsent = this.subjectData.reduce((sum, s) => sum + (s.absent || 0), 0);
+    const totalPresent = subjectsToUse.reduce((sum, s) => sum + (s?.present || 0), 0);
+    const totalAbsent = subjectsToUse.reduce((sum, s) => sum + (s?.absent || 0), 0);
     const totalClasses = totalPresent + totalAbsent;
 
     return {
-      overallPercentage: this.originalOverallPercentage,
+      overallPercentage: this.originalOverallPercentage || 0,
       totalSubjects,
       safeSubjects,
       warningSubjects,
@@ -377,8 +574,9 @@ class GitamInsightsContent {
         this.isExtractingData = false;
         if (this.attendancePageLoaded && this.subjectData.length === 0 && !this.isApiDataLoaded) {
           this.extractSubjectDataFromDOM();
-          if (this.isEnhancedMode) {
-            this.renderEnhancedUI();
+          const enhancedTab = document.querySelector('#tabEnhanced');
+          if (enhancedTab && enhancedTab.classList.contains('active')) {
+            this.renderEnhancedDashboard();
           }
         }
       }, 2000);
@@ -511,9 +709,10 @@ class GitamInsightsContent {
       this.isApiDataLoaded = true;
       console.log('GITAM Student Insights v3: Updated subject data from API:', subjects);
       
-      // Update UI if in enhanced mode
-      if (this.isEnhancedMode) {
-        this.renderEnhancedUI();
+      // Update UI if enhanced tab is active
+      const enhancedTab = document.querySelector('#tabEnhanced');
+      if (enhancedTab && enhancedTab.classList.contains('active')) {
+        this.renderEnhancedDashboard();
       }
     }
   }
@@ -579,9 +778,10 @@ class GitamInsightsContent {
       // Also fetch detailed attendance data if needed
       await this.fetchFullAttendanceData();
       
-      // Update the UI if we're in enhanced mode
-      if (this.isEnhancedMode) {
-        this.renderEnhancedUI();
+      // Update the UI if enhanced tab is active
+      const enhancedTab = document.querySelector('#tabEnhanced');
+      if (enhancedTab && enhancedTab.classList.contains('active')) {
+        this.renderEnhancedDashboard();
       }
     } catch (error) {
       console.log('GITAM Student Insights v3: Error refreshing data:', error);
@@ -602,3 +802,9 @@ if (document.readyState === 'loading') {
 } else {
   initGitamInsights();
 }
+
+// Plasmo content script configuration
+export const config = {
+  matches: ["https://gstudent.gitam.edu/*"],
+  run_at: "document_end"
+};
